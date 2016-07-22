@@ -12,10 +12,18 @@
 #include <string.h>
 
 #define PORT 4000		//服务器监听的端口
-#define MAXDATASIZE 10	//一次接收的最大字节数
+#define COMMSIZE 5
+#define DATASIZE 10
+#define MAXSIZE 24          //10+5+5+4,data+comm+fd+分隔符
 
 int client_fd;
-
+typedef struct messages
+{
+    int sock_fd;
+    char comm[COMMSIZE];
+	char data[MAXSIZE];
+}Msg;
+		  
 void* client_send(void* arg);
 void* client_recv(void* arg);
 
@@ -56,7 +64,7 @@ int main(int argc, char *argv[])
 		perror("connect");
 		exit(1);
 	}
-	printf("client:success to connect server,client_fd is %d!\n",client_fd);
+	printf("client:success to connect server!\n");
 	//建立一个发送信息的线程
 	if ( pthread_create(&send_tid,NULL,client_send,NULL) )
 	{
@@ -81,28 +89,23 @@ int main(int argc, char *argv[])
 
 void* client_send(void* arg)
 {
-	char msg[MAXDATASIZE] = {0};
-	int i = 0;
+	Msg msg;
+	char getstr[MAXSIZE] = {0};
 	while (1)
 	{
-		i = 0;
-		memset(msg, 0, MAXDATASIZE);
+		memset(getstr, 0, MAXSIZE);
 		printf("send message to server or enter \"done\" to over!\n");
 		setbuf(stdin,NULL);
-		while ((msg[i] = getchar()) != '\n' && msg[i] != EOF && i < MAXDATASIZE)
-		{
-			i++;
+		fgets(getstr, MAXSIZE, stdin);
+		if (sscanf(getstr,"#%d:%s:%s#", &msg.sock_fd, msg.comm, msg.data) == -1)
+		{   
+			perror("sscanf");
 		}
-		/*if (MAXDATASIZE == i)
-		{
-			char c;
-			while ((c = getchar()) != '\n' && c != EOF);
-		}*/
-		if (strncmp(msg, "done", 4) == 0)
+		/*if (strncmp(msg, "done", 4) == 0)
 		{
 			break;
-		}
-		if ( send(client_fd,msg,strlen(msg),0) == -1 )
+		}*/
+		if ( send(client_fd, getstr, strlen(getstr),0) == -1 )
 		{
 			perror("send");
 		}
@@ -113,10 +116,10 @@ void* client_send(void* arg)
 void* client_recv(void* arg)
 {
 	int numbytes;
-	char buf[MAXDATASIZE+1];
+	char buf[MAXSIZE+1];
 	while (1)
 	{
-		if ( (numbytes = recv(client_fd,buf,MAXDATASIZE,0)) < 1 )
+		if ( (numbytes = recv(client_fd,buf,MAXSIZE,0)) < 1 )
 		{
 			perror("recv");
 			exit(1);
@@ -124,10 +127,10 @@ void* client_recv(void* arg)
 		//打印信息，关闭套接字
 		buf[numbytes] = '\0';
 		printf("received from server:%s",buf);
-		if (strncmp(buf, "done", 4) == 0)
+		/*if (strncmp(buf, "done", 4) == 0)
 		{
 			break;
-		}
+		}*/
 	}
 	printf("break out from recv done!\n");
 	pthread_exit(0);

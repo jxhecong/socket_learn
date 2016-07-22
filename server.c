@@ -10,6 +10,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+//#include <stdbool.h>
 #include "list_hc.h"
 #include "rw_server.h"
 
@@ -21,11 +22,12 @@ void main()
 	//struct sockaddr_in类似struct sockaddr类型，相同大小
 	struct sockaddr_in server_addr;		//服务器的地址，协议、IP、端口
 	struct list_node *list_head;		//定义一个头节点
+	pthread_t send_tid;
 	Info *info_node;
 	int sin_size = sizeof(struct sockaddr);	//存放sizeof(struck sockaddr_in)
 	
 	list_head = (struct list_node *)malloc(sizeof(struct list_node));
-	list_init(list_head);	//初始化头节点
+	list_init(list_head);				//初始化头节点
 	printf("head init ok!\n");
 	//创建监听套接字，进行错误检查
 	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
@@ -51,47 +53,40 @@ void main()
 		perror("listen");
 		exit(1);
 	}
+	//建立一个接收终端输入并发送信息的线程
+	if (pthread_create(&send_tid, NULL, server_send, (void *)list_head))
+	{
+		perror("send pthread_create");
+	}
+
 	while (1)
 	{
-		if (num < NUMBER)
+		//添加一个客户端节点
+		info_node = (Info *)malloc(sizeof(Info));
+		//阻塞主线程，等待新连接，接收客户端的地址信息
+		if ((info_node->client_fd = accept(server_fd,\
+			(struct sockaddr *)&info_node->client_addr, &sin_size)) == -1)
 		{
-			//添加一个客户端节点
-			info_node = (Info *)malloc(sizeof(Info));
-			//阻塞主线程，等待新连接，接收客户端的地址信息
-			if ((info_node->client_fd = accept(server_fd,\
-				(struct sockaddr *)&info_node->client_addr, &sin_size)) == -1)
-			{
-				perror("accept");
-				exit(1);
-			}
-			list_add_before(&info_node->list, list_head);
-			num++;		//连接新客户端后，数目+1
-			//打印客户端地址，网络字节顺序转成ASCALL
-			printf("server:got connection from %s\n",\
-				inet_ntoa(info_node->client_addr.sin_addr));
-			//建立一个发送信息的线程
-			if (pthread_create(&info_node->send_tid, NULL, server_send, (void *)info_node))
-			{
-				perror("pthread_create");
-			}
-			//建立一个接收信息的线程
-			if (pthread_create(&info_node->recv_tid, NULL, server_recv, (void *)info_node))
-			{
-				perror("pthread_create");
-			}
+			perror("accept");
+			exit(1);
+		}
+		if (++num > NUMBER)		//连接客户端数目超额
+		{
+			info_node->full = true;
+			printf("the connected clients are full, cancle this connect!\n");
+		}
+		else
+		{
+			info_node->full = false;
+			list_add_before(&info_node->list, list_head);	//将新客户端加入链表中，并打印信息
+			printf("server:get new connection from %s, allocation fd is %d!\n",\
+				inet_ntoa(info_node->client_addr.sin_addr), info_node->client_fd);
+		}
+		//建立一个接收信息的线程
+		if (pthread_create(&info_node->recv_tid, NULL, server_recv, (void *)info_node))
+		{
+			perror("recv pthread_create");
 		}
 	}
-	/*
-	//等待线程接收
-	if (pthread_join(server_tid[2*num], 0))
-	{
-		perror("pthread_join");
-	}
-	//等待线程接收
-	if (pthread_join(server_tid[2*num+1], 0))
-	{
-		perror("pthread_join");
-	}
-	*/
 	close(server_fd);
 }

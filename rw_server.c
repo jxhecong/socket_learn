@@ -12,48 +12,49 @@
 #include <pthread.h>
 #include "list_hc.h"
 #include "rw_server.h"
+//pthread_mutex_t mymutex = PTHREAD_MUTEX_INITALLIZER;
 
-//建立一个线程向客户端发送信息
+//建立一个线程选择性向客户端发送信息
 void* server_send(void *arg)
 {
-	Info *node = (Info *)arg;
-	char msg[MAXDATASIZE] = {0};
-	int i = 0;
+	char getstr[MAXSIZE] = {0};
+	struct list_node *pos;
+	struct list_node *list_head = (struct list_node *)arg;
+	Msg msg_in;
+	Info *node;
 	while (1)
 	{
-		i = 0;
-		memset(msg, 0, MAXDATASIZE);
-		printf("send message to %d or enter \"done\" to over!\n",node->client_fd);
-		setbuf(stdin, NULL);
-		while ((msg[i] = getchar()) != '\n' && msg[i] != EOF\
-			&& i < MAXDATASIZE)
+		//pthread_mutex_lock(&mymutex);
+		fgets(getstr, MAXSIZE, stdin);
+		sscanf(getstr,"#%d:%s:%s#", &msg_in.sock_fd, msg_in.comm, msg_in.data);
+		//pthread_mutex_unlock(&mymutex);
+		list_for_each(pos, list_head)
 		{
-			i++;
+			node = (Info *)pos;
+			if (0 == msg_in.sock_fd || node->client_fd == msg_in.sock_fd)
+			{
+				if ((send(node->client_fd, getstr, strlen(getstr), 0) == -1))
+				{
+					perror("send");
+				}
+				printf("send messge to client_fd %d!\n", node->client_fd);
+			}
 		}
-		if (strncmp(msg, "done", 4) == 0)
-		{
-			break;
-		}
-		if (send(node->client_fd, msg, strlen(msg), 0) == -1)
-		{
-			perror("send");
-		}
+		printf("search and send over!\n");
 	}
-	free(node);
-	printf("break out from send done!\n");
+	printf("break out from server_send!\n");
 	pthread_exit(0);
 }
-//建立一个线程接收客户端信息
+//建立多个线程接收多个客户端的信息
 void* server_recv(void *arg)
 {
-	Info *node = (Info *)arg;
+	Info *node = (Info *)arg;	//指向当前连接的客户端地址信息
 	int numbytes = 0;
-	char buf[MAXDATASIZE+1];
+	char buf[MAXSIZE+1];
 	while (1)
 	{
 		//接收客户端发来的字节信息
-		printf("client_fd is:%d\n",node->client_fd);
-		if ((numbytes = recv(node->client_fd, buf, MAXDATASIZE, 0)) < 1)
+		if ((numbytes = recv(node->client_fd, buf, MAXSIZE, 0)) < 1)
 		{
 			perror("recv");
 			exit(1);
@@ -61,13 +62,13 @@ void* server_recv(void *arg)
 		//打印信息，关闭套接字
 		buf[numbytes] = '\0';
 		printf("received from fd%d:%s",node->client_fd,buf);
-		if (strncmp(buf, "done", 4) == 0)
+		/*if (strncmp(buf, "done", 4) == 0)
 		{
 			break;
-		}
+		}*/
 	}
 	free(node);
-	printf("break out from recv done!\n");
+	printf("break out from server_recv!\n");
 	close(node->client_fd);
 	pthread_exit(0);
 }
