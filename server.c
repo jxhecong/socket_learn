@@ -28,7 +28,6 @@ void main()
 	
 	list_head = (struct list_node *)malloc(sizeof(struct list_node));
 	list_init(list_head);				//初始化头节点
-	printf("head init ok!\n");
 	//创建监听套接字，进行错误检查
 	if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 	{
@@ -53,6 +52,7 @@ void main()
 		perror("listen");
 		exit(1);
 	}
+	printf("server is begin to accept!\n");
 	//建立一个接收终端输入并发送信息的线程
 	if (pthread_create(&send_tid, NULL, server_send, (void *)list_head))
 	{
@@ -77,6 +77,7 @@ void main()
 		}
 		else
 		{
+			info_node->info_head = list_head;
 			info_node->full = false;
 			list_add_before(&info_node->list, list_head);	//将新客户端加入链表中，并打印信息
 			printf("server:get new connection from %s, allocation fd is %d!\n",\
@@ -87,6 +88,10 @@ void main()
 		{
 			perror("recv pthread_create");
 		}
+	}
+	if (pthread_join(send_tid, 0))
+	{
+		perror("send_pthread_join");
 	}
 	close(server_fd);
 }

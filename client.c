@@ -14,12 +14,13 @@
 #define PORT 4000		//服务器监听的端口
 #define COMMSIZE 5
 #define DATASIZE 10
-#define MAXSIZE 24          //10+5+5+4,data+comm+fd+分隔符
+#define MAXSIZE 30          //10+5+5+4,data+comm+fd+分隔符
 
 int client_fd;
 typedef struct messages
 {
-    int sock_fd;
+    int source_fd;
+	int dest_fd;
     char comm[COMMSIZE];
 	char data[MAXSIZE];
 }Msg;
@@ -93,44 +94,65 @@ void* client_send(void* arg)
 	char getstr[MAXSIZE] = {0};
 	while (1)
 	{
-		memset(getstr, 0, MAXSIZE);
-		printf("send message to server or enter \"done\" to over!\n");
-		setbuf(stdin,NULL);
+		memset(getstr, 0, sizeof(getstr));
+		memset(&msg, 0, sizeof(msg));
+		printf("send message in format:#source_fd.comm.dest_fd.data#\n\
+		\"#0.dele.0.data#\" to over this client,\n\
+		\"#my_fd.exch.dest_fd.data#\" to send message to other client,\n\
+		\"#0.serv.0.data#\" to send message to server,\n\
+		\"#0.show.0.data#\" to get clients infomation!\n");
 		fgets(getstr, MAXSIZE, stdin);
-		if (sscanf(getstr,"#%d:%s:%s#", &msg.sock_fd, msg.comm, msg.data) == -1)
+		fflush(stdin);
+		if (sscanf(getstr,"#%d.%[^.].%d.%[^#]#", &msg.source_fd, msg.comm, &msg.dest_fd, msg.data) == -1)
 		{   
 			perror("sscanf");
 		}
-		/*if (strncmp(msg, "done", 4) == 0)
+		if (strncmp(msg.comm, "serv", 4) == 0\
+			|| strncmp(msg.comm, "dele", 4) == 0\
+			|| strncmp(msg.comm, "show", 4) == 0\
+			|| strncmp(msg.comm, "exch", 4) == 0)
+		{
+			if ( send(client_fd, getstr, strlen(getstr),0) == -1 )
+			{
+				perror("send");
+			}
+		}
+		if (strncmp(msg.comm, "dele", 4) == 0)
 		{
 			break;
-		}*/
-		if ( send(client_fd, getstr, strlen(getstr),0) == -1 )
-		{
-			perror("send");
 		}
 	}
+	//close(client_fd);
 	printf("break out from send done!\n");
 	pthread_exit(0);
 }
 void* client_recv(void* arg)
 {
 	int numbytes;
-	char buf[MAXSIZE+1];
+	char buf[MAXSIZE];
+	Msg msg;
 	while (1)
 	{
-		if ( (numbytes = recv(client_fd,buf,MAXSIZE,0)) < 1 )
+		memset(&msg, 0, sizeof(msg));
+		memset(buf, 0, sizeof(buf));
+		if ( (numbytes = recv(client_fd, buf, MAXSIZE-1, 0)) < 1 )
 		{
 			perror("recv");
 			exit(1);
 		}
 		//打印信息，关闭套接字
+		buf[numbytes-1] = '#';
 		buf[numbytes] = '\0';
-		printf("received from server:%s",buf);
-		/*if (strncmp(buf, "done", 4) == 0)
+		printf("received from server:%s\n", buf);
+		fflush(stdout);
+		if (sscanf(buf,"#%d.%[^.].%d.%[^#]#", &msg.source_fd, msg.comm, &msg.dest_fd, msg.data) == -1)
+		{   
+			perror("sscanf");
+		}
+		if (strncmp(msg.comm, "dele", 4) == 0)
 		{
 			break;
-		}*/
+		}
 	}
 	printf("break out from recv done!\n");
 	pthread_exit(0);
