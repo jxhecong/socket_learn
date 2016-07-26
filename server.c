@@ -27,6 +27,7 @@ void main()
 	int sin_size = sizeof(struct sockaddr);	//存放sizeof(struck sockaddr_in)
 	char nodeinfo[MAXSIZE];
 	int num = 0;			//客户端数
+	int flag = 1;
 
 	list_head = (struct list_node *)malloc(sizeof(struct list_node));
 	list_init(list_head);				//初始化头节点
@@ -44,6 +45,10 @@ void main()
 	server_addr.sin_addr.s_addr = INADDR_ANY;	//赋零值，本机IP，网络字节顺序
 	//bzero(&(server_addr.sin_zero),8);			//其余空间清零
 	//绑定监听套接字和端口等信息，进行错误检查
+	if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) == -1)
+	{
+		perror("setsockopt");
+	}
 	if (bind(server_fd, (struct sockaddr *)&server_addr, sin_size) == -1)
 	{
 		perror("bind");

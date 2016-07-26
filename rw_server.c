@@ -14,7 +14,7 @@
 #include "rw_server.h"
 //pthread_mutex_t mymutex = PTHREAD_MUTEX_INITALLIZER;
 
-#define DEBUG
+//#define DEBUG
 
 //从头节点查找目的fd并发送信息
 void* search_send(int dest_fd, struct list_node *head, char *information)
@@ -106,6 +106,11 @@ void* server_recv(void *node_arg)
 		if ((numbytes = recv(node->client_fd, buf, MAXSIZE-1, 0)) == -1)
 		{
 			perror("recv");
+		}
+		if (strlen(buf) == 0)
+		{
+			printf("client %d is disconnect, delete its node!\n", node->client_fd);
+			break;
 		}
 #ifdef DEBUG
 		printf("recv buf %s\n", buf);

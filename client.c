@@ -16,8 +16,9 @@
 #define COMMSIZE 4 
 #define DATASIZE 1000
 #define MAXSIZE 1024          //10+5+5+4,data+comm+fd+分隔符
-#define DEBUG
+//#define DEBUG
 
+struct sockaddr_in server_addr;
 int client_fd;
 pthread_t send_tid;
 pthread_t recv_tid;
@@ -35,9 +36,8 @@ void* client_recv(void* arg);
 
 int main(int argc, char *argv[])
 {
-	struct sockaddr_in server_addr;
 	struct hostent *server;	//服务器的地址信息
-	
+	int flag = 1;
 	//接收要连接的服务器名或地址
 	if ( argc != 2 )
 	{
@@ -63,6 +63,10 @@ int main(int argc, char *argv[])
 	server_addr.sin_addr = *((struct in_addr *)server->h_addr);	//类型转换
 	bzero(&(server_addr.sin_zero),8);
 	//申请客户端套接字和服务器进行连接
+	if (setsockopt(client_fd, SOL_SOCKET, SO_REUSEADDR, &flag, sizeof(flag)) == -1)
+	{
+		perror("setsockopt");
+	}
 	if ( connect(client_fd,(struct sockaddr *)&server_addr,\
 		sizeof(struct sockaddr)) == -1 )
 	{
@@ -176,14 +180,16 @@ void* client_recv(void* arg)
 		}
 		if (strlen(buf) == 0)
 		{
-			continue;
-			/*printf("can not recv data from server, try to connect server again!\n");
+			//continue;
+			printf("can not recv data from server, try to connect server again!\n");
 			if (connect(client_fd, (struct sockaddr *)&server_addr,\
 				sizeof(struct sockaddr)) == -1)
 			{
 				perror("connect");
 				//exit(1);
-			}*/
+			}
+			sleep(5);
+			continue;
 		}
 		printf("received from server: %s\n", buf);
 		fflush(stdout);
