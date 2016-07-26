@@ -10,13 +10,18 @@
 #include <netdb.h>
 #include <pthread.h>
 #include <string.h>
+//#include <signal.h>
 
 #define PORT 4000		//服务器监听的端口
-#define COMMSIZE 5
-#define DATASIZE 10
-#define MAXSIZE 30          //10+5+5+4,data+comm+fd+分隔符
+#define COMMSIZE 4 
+#define DATASIZE 1000
+#define MAXSIZE 1024          //10+5+5+4,data+comm+fd+分隔符
+#define DEBUG
 
 int client_fd;
+pthread_t send_tid;
+pthread_t recv_tid;
+
 typedef struct messages
 {
     int source_fd;
@@ -32,8 +37,6 @@ int main(int argc, char *argv[])
 {
 	struct sockaddr_in server_addr;
 	struct hostent *server;	//服务器的地址信息
-	pthread_t send_tid;
-	pthread_t recv_tid;
 	
 	//接收要连接的服务器名或地址
 	if ( argc != 2 )
@@ -53,6 +56,7 @@ int main(int argc, char *argv[])
 		perror("socket");
 		exit(1);
 	}
+	//printf("socket fd %d\n", client_fd);
 	//服务器的协议、端口、地址信息
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_port = htons(PORT);
@@ -65,7 +69,11 @@ int main(int argc, char *argv[])
 		perror("connect");
 		exit(1);
 	}
-	printf("client:success to connect server!\n");
+	/*if ( (numbytes = recv(client_fd, buf, MAXSIZE-1, 0)) < 1 )
+	{
+		perror("recv");
+	}
+	printf("received from server:%s\n", buf);*/
 	//建立一个发送信息的线程
 	if ( pthread_create(&send_tid,NULL,client_send,NULL) )
 	{
@@ -91,69 +99,107 @@ int main(int argc, char *argv[])
 void* client_send(void* arg)
 {
 	Msg msg;
+	int numbytes;
 	char getstr[MAXSIZE] = {0};
+	char cpystr[MAXSIZE] = {0};
 	while (1)
 	{
 		memset(getstr, 0, sizeof(getstr));
 		memset(&msg, 0, sizeof(msg));
-		printf("send message in format:#source_fd.comm.dest_fd.data#\n\
-		\"#0.dele.0.data#\" to over this client,\n\
-		\"#my_fd.exch.dest_fd.data#\" to send message to other client,\n\
-		\"#0.serv.0.data#\" to send message to server,\n\
-		\"#0.show.0.data#\" to get clients infomation!\n");
-		fgets(getstr, MAXSIZE, stdin);
+		printf("接收和发送信息格式: 命令/对端socket_fd/信息数据\n\
+		\"dele/0/data\" 结束本客户端的通信,\n\
+		\"exch/dest_fd/data\" 向另一个客户端发消息,\n\
+		\"serv/0/data\" 向服务器发送信息,\n\
+		\"show/0/data\" 查询在线客户端!\n");
+		fgets(getstr, MAXSIZE-1, stdin);
 		fflush(stdin);
-		if (sscanf(getstr,"#%d.%[^.].%d.%[^#]#", &msg.source_fd, msg.comm, &msg.dest_fd, msg.data) == -1)
+		numbytes = strlen(getstr);
+		if (getstr[numbytes-1] != '\n')
+		{
+			while(getchar() != '\n');
+			printf("too much input!\n");
+			continue;
+		}
+#ifdef DEBUG
+		printf("fgets getstr:%s\n", getstr);
+#endif
+		//对输入进行格式化提取、判断
+		//memcpy(cpystr, getstr, strlen(getstr));
+		if (sscanf(getstr,"%[^/]/%d/%s", msg.comm, &msg.dest_fd, msg.data) == -1)
 		{   
 			perror("sscanf");
 		}
-		if (strncmp(msg.comm, "serv", 4) == 0\
-			|| strncmp(msg.comm, "dele", 4) == 0\
-			|| strncmp(msg.comm, "show", 4) == 0\
-			|| strncmp(msg.comm, "exch", 4) == 0)
+#ifdef DEBUG
+		printf("sscanf getstr:%s\n", getstr);
+#endif
+		//memset(getstr, 0, sizeof(getstr));
+		//sprintf(getstr, "%s.%d.%s", msg.comm, msg.dest_fd, msg.data);
+#ifdef DEBUG
+		printf("sprintf getstr:%s\n", getstr);
+#endif
+		//命令正确则发送给服务器
+		if (strncmp(msg.comm, "serv", 4) == 0 || strncmp(msg.comm, "dele", 4) == 0\
+			|| strncmp(msg.comm, "show", 4) == 0 || strncmp(msg.comm, "exch", 4) == 0)
 		{
 			if ( send(client_fd, getstr, strlen(getstr),0) == -1 )
 			{
 				perror("send");
 			}
 		}
+		else
+		{
+			printf("wrong commend input!\n");
+		}
+		//如果输入删除命令，跳出循环退出发送线程
 		if (strncmp(msg.comm, "dele", 4) == 0)
 		{
 			break;
 		}
 	}
-	//close(client_fd);
 	printf("break out from send done!\n");
 	pthread_exit(0);
 }
+
 void* client_recv(void* arg)
 {
 	int numbytes;
 	char buf[MAXSIZE];
+	//char cpybuf[MAXSIZE];
 	Msg msg;
 	while (1)
 	{
 		memset(&msg, 0, sizeof(msg));
 		memset(buf, 0, sizeof(buf));
-		if ( (numbytes = recv(client_fd, buf, MAXSIZE-1, 0)) < 1 )
+		if ( (numbytes = recv(client_fd, buf, MAXSIZE-1, 0)) == -1 )
 		{
 			perror("recv");
-			exit(1);
 		}
-		//打印信息，关闭套接字
-		buf[numbytes-1] = '#';
-		buf[numbytes] = '\0';
-		printf("received from server:%s\n", buf);
+		if (strlen(buf) == 0)
+		{
+			continue;
+			/*printf("can not recv data from server, try to connect server again!\n");
+			if (connect(client_fd, (struct sockaddr *)&server_addr,\
+				sizeof(struct sockaddr)) == -1)
+			{
+				perror("connect");
+				//exit(1);
+			}*/
+		}
+		printf("received from server: %s\n", buf);
 		fflush(stdout);
-		if (sscanf(buf,"#%d.%[^.].%d.%[^#]#", &msg.source_fd, msg.comm, &msg.dest_fd, msg.data) == -1)
+		//对接收进行格式化提取判断
+		//memcpy(cpybuf, buf, strlen(buf));
+		if (sscanf(buf,"%[^/]/%d/%s", msg.comm, &msg.source_fd, msg.data) == -1)
 		{   
 			perror("sscanf");
 		}
+		//获得服务器返回的删除命令，退出接收线程
 		if (strncmp(msg.comm, "dele", 4) == 0)
 		{
 			break;
 		}
 	}
+	//kill(send_tid, 0);
 	printf("break out from recv done!\n");
 	pthread_exit(0);
 }
